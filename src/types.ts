@@ -188,7 +188,7 @@ export interface NotificationDefinition<TPayload extends JsonObject = JsonObject
   toMessaging?(payload: TPayload): MessagingContent;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: heterogeneous definitions erased to one runtime shape (same pattern as queue's JobList)
+// oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous definitions erased to one runtime shape (same pattern as queue's JobList)
 export type AnyNotificationDefinition = NotificationDefinition<any>;
 
 // -- Queued delivery ---------------------------------------------------------------
@@ -264,7 +264,7 @@ export interface NotificationsProvidersConfig {
  * unchanged against a recording fake. Generics are erased: the framework
  * treats every notifier uniformly, exactly like storage treats kit drivers.
  */
-// biome-ignore lint/suspicious/noExplicitAny: heterogeneous kit drivers erased to one runtime shape (same pattern as queue's JobList)
+// oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous kit drivers erased to one runtime shape (same pattern as queue's JobList)
 export type KitNotificationDriver = NotificationDriverDefinition<string, any, any, any, any>;
 
 export interface NotificationsServiceOptions {
