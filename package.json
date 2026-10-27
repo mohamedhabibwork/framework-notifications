@@ -1,0 +1,27 @@
+{
+  "name": "@framework/notifications",
+  "version": "0.2.0",
+  "description": "Multi-channel notification dispatcher and builders backed by @mohamedhabibwork/notifykit.",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "homepage": "https://github.com/mohamedhabibwork/framework-notifications#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mohamedhabibwork/framework.git",
+    "directory": "packages/notifications"
+  },
+  "bugs": {
+    "url": "https://github.com/mohamedhabibwork/framework/issues"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@framework/core": "workspace:*",
+    "@framework/mail": "workspace:*",
+    "@framework/queue": "workspace:*",
+    "@mohamedhabibwork/notifykit": "0.5.0",
+    "zod": "4.6.7"
+  }
+}
