@@ -26,9 +26,9 @@ export const PUSH_PROVIDER_TYPES = ['fcm', 'apns', 'webpush', 'huawei'] as const
 
 /**
  * Messaging provider types notifykit ships for the `messaging` channel
- * (`notifications.providers.messaging`). Both are fetch-based — no peer SDK.
+ * (`notifications.providers.messaging`). All are fetch-based — no peer SDK.
  */
-export const MESSAGING_PROVIDER_TYPES = ['telegram', 'slack'] as const;
+export const MESSAGING_PROVIDER_TYPES = ['telegram', 'slack', 'whatsapp', 'twilio', 'vonage'] as const;
 
 /**
  * The notifykit recipient key each built-in provider type receives the
@@ -41,6 +41,9 @@ export const KIT_DEFAULT_TARGETS: Readonly<Record<string, string>> = {
   webpush: 'endpoint',
   telegram: 'chatId',
   slack: 'channel',
+  whatsapp: 'phoneNumber',
+  twilio: 'phoneNumber',
+  vonage: 'phoneNumber',
 };
 
 /**

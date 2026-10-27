@@ -52,15 +52,19 @@ export interface ResolvedProviderEntry {
  */
 export type KitNotifier = Notifier<string, unknown, unknown, unknown, unknown>;
 
-const providerEntrySchema = z.object({
+export const notificationProviderEntrySchema = z.object({
   type: z.string().trim().min(1, 'Provider type is required'),
   target: z.string().trim().min(1, 'Provider target cannot be empty').optional(),
   options: z.record(z.string(), z.unknown()).optional(),
 });
 
-const providersConfigSchema = z.object({
-  push: providerEntrySchema.optional(),
-  messaging: providerEntrySchema.optional(),
+export const notificationsProvidersSchema = z.object({
+  push: notificationProviderEntrySchema.optional(),
+  messaging: notificationProviderEntrySchema.optional(),
+});
+
+export const notificationsConfigSchema = z.object({
+  providers: notificationsProvidersSchema.optional(),
 });
 
 /**
@@ -71,7 +75,7 @@ const providersConfigSchema = z.object({
  * is created (same rule as storage).
  */
 export function parseNotificationsProviders(config: NotificationsProvidersConfig): NotificationsProvidersConfig {
-  const result = providersConfigSchema.safeParse(config);
+  const result = notificationsProvidersSchema.safeParse(config);
   if (!result.success) {
     throw new ConfigError(
       result.error.issues.map(

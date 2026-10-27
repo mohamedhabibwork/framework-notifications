@@ -324,6 +324,19 @@ describe('notifykit provider config', () => {
   test('a malformed providers section is a config error', () => {
     expect(() => parseNotificationsProviders({ push: { type: '' } as never })).toThrow(ConfigError);
   });
+
+  test('resolves built-in notifykit messaging provider types (telegram, slack, whatsapp, twilio, vonage)', () => {
+    expect(MESSAGING_PROVIDER_TYPES).toEqual(['telegram', 'slack', 'whatsapp', 'twilio', 'vonage']);
+    for (const type of ['whatsapp', 'twilio', 'vonage'] as const) {
+      const svc = new NotificationsService({
+        mailer: new Mailer(transport, { from }),
+        queue: manager,
+        store: new InMemoryNotificationStore(),
+        providers: { messaging: { type } },
+      });
+      expect(svc).toBeInstanceOf(NotificationsService);
+    }
+  });
 });
 
 describe('queued delivery with a push channel (BullMQ on real Redis)', () => {

@@ -38,8 +38,16 @@ export {
   NOTIFICATION_JOB_VERSION,
   notificationJobPayloadSchema,
 } from './job';
-export type { KitNotifier } from './kit';
-export { createKitNotifier, kitMessage, parseNotificationsProviders, resolveProviderEntry } from './kit';
+export type { KitNotifier, ResolvedProviderEntry } from './kit';
+export {
+  createKitNotifier,
+  kitMessage,
+  notificationProviderEntrySchema,
+  notificationsConfigSchema,
+  notificationsProvidersSchema,
+  parseNotificationsProviders,
+  resolveProviderEntry,
+} from './kit';
 export { InMemoryNotificationStore } from './memory-store';
 export { createNotificationsProvider } from './provider';
 export { NotificationsService } from './service';
