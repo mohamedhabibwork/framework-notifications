@@ -81,7 +81,9 @@ export type MessagingContent = {
  * `native` is a loosely validated passthrough object forwarded verbatim as
  * notifykit's per-send `native` options (`parse_mode`, TTL, blocks, ...) and
  * is only read by the `push`/`messaging` channels — provider-specific typing
- * lives in the provider config, never in this envelope.
+ * lives in the provider config, never in this envelope. `nativeByChannel`
+ * overrides it per kit channel, which is what a notification that goes out on
+ * both `push` (FCM TTL) and `messaging` (Telegram `parse_mode`) needs.
  */
 export type NotificationEnvelope = {
   readonly name: string;
@@ -89,6 +91,11 @@ export type NotificationEnvelope = {
   readonly to: string;
   readonly payload: JsonObject;
   readonly native?: JsonObject;
+  /** Per-channel overrides of `native` (only `push` and `messaging` are read). */
+  readonly nativeByChannel?: {
+    readonly push?: JsonObject;
+    readonly messaging?: JsonObject;
+  };
 };
 
 // -- Delivery status --------------------------------------------------------------

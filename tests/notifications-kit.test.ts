@@ -174,6 +174,46 @@ describe('notifykit-backed channels (push + messaging)', () => {
     expect(fakeDriver.lastMessage()?.native).toEqual({ ttl: 3600, urgency: 'high' });
   });
 
+  test('nativeByChannel overrides the shared native bag per kit channel', async () => {
+    fakeDriver.clear();
+    await notifications.send({
+      name: 'kit.broadcast',
+      channels: ['push', 'messaging'],
+      to: 'device-token-3',
+      payload: { message: 'per channel' },
+      native: { shared: true },
+      nativeByChannel: {
+        push: { ttl: 60 },
+        messaging: { parse_mode: 'HTML' },
+      },
+    });
+
+    const messages = fakeDriver.messages();
+    const push = messages.find((message) => message.notification?.body?.startsWith('push:'));
+    const messaging = messages.find((message) => message.notification?.body?.startsWith('messaging:'));
+    expect(push?.native).toEqual({ ttl: 60 });
+    expect(messaging?.native).toEqual({ parse_mode: 'HTML' });
+  });
+
+  test('a channel without an override still receives the shared native bag', async () => {
+    fakeDriver.clear();
+    await notifications.send({
+      name: 'kit.broadcast',
+      channels: ['push', 'messaging'],
+      to: 'device-token-4',
+      payload: { message: 'shared' },
+      native: { shared: true },
+      nativeByChannel: { messaging: { parse_mode: 'MarkdownV2' } },
+    });
+    const messages = fakeDriver.messages();
+    expect(messages.find((message) => message.notification?.body?.startsWith('push:'))?.native).toEqual({
+      shared: true,
+    });
+    expect(messages.find((message) => message.notification?.body?.startsWith('messaging:'))?.native).toEqual({
+      parse_mode: 'MarkdownV2',
+    });
+  });
+
   test('a failing push channel does not block the email and database channels', async () => {
     fakeDriver.clear();
     fakeDriver.failNext(new Error('fcm outage'));

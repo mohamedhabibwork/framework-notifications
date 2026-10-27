@@ -343,7 +343,7 @@ export class NotificationsService {
       const entry = this.#kitEntries[channel];
       if (!entry) throw unavailableChannelError([channel]);
       try {
-        const message = kitMessage(entry.target, plan.envelope, content, `notification-${id}-${channel}`);
+        const message = kitMessage(entry.target, plan.envelope, content, `notification-${id}-${channel}`, channel);
         const result = await notifier.send(message);
         if (!result.ok) {
           throw new Error(

@@ -34,6 +34,12 @@ export const notificationEnvelopeSchema: z.ZodType<NotificationEnvelope> = z
     to: z.string().trim().min(1, 'Recipient is required'),
     payload: jsonRecord,
     native: jsonRecord.optional(),
+    nativeByChannel: z
+      .object({
+        push: jsonRecord.optional(),
+        messaging: jsonRecord.optional(),
+      })
+      .optional(),
   })
   .refine((envelope) => !envelope.channels.includes('email') || mailAddressSchema.safeParse(envelope.to).success, {
     error: 'The email channel requires a valid email recipient',

@@ -166,8 +166,11 @@ export function kitMessage(
   envelope: NotificationEnvelope,
   content: { readonly title?: string; readonly body: string },
   idempotencyKey: string,
+  channel: KitChannel,
 ): NotificationMessage<unknown, unknown> {
-  const native = envelope.native;
+  // Per-channel native wins over the shared bag: one notification may target a
+  // device token and a chat id at once, and their options are not the same.
+  const native = envelope.nativeByChannel?.[channel] ?? envelope.native;
   const to: unknown =
     targetKey === 'endpoint'
       ? { endpoint: envelope.to, keys: native !== undefined && 'keys' in native ? native.keys : undefined }
