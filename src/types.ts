@@ -11,9 +11,8 @@ import type { z } from 'zod/v4';
 // -- Channels ------------------------------------------------------------------
 
 /**
- * Delivery channels. SMS is planned but deliberately not implemented (see
- * `SMS_PLANNED`); nothing is ever delivered to a channel the notification did
- * not declare (spec §8).
+ * Delivery channels. Nothing is ever delivered to a channel the notification did
+ * not declare (spec §8). SMS is a custom channel: see `smsChannel`.
  *
  * - `email` delivers through the bound `@framework/mail` `Mailer` — the mail
  *   transport stays owned by `@framework/mail` (notifykit's SMTP provider is
@@ -258,6 +257,18 @@ export interface NotificationChannelDefinition<
   readonly content: z.ZodType<TContent>;
   /** Throws to record a failure, which also makes queued delivery retry. */
   deliver(to: string, content: TContent, context: { readonly recordId: string }): Promise<ChannelDelivery | void>;
+}
+
+/** One text message. */
+export interface SmsMessage {
+  /** E.164 recipient, such as `+15550100`. */
+  readonly to: string;
+  readonly body: string;
+}
+
+/** Delivery boundary behind the `sms` channel (see `twilioSms`, `vonageSms`, `MemorySmsTransport`). */
+export interface SmsTransport {
+  send(message: SmsMessage): Promise<{ readonly id: string }>;
 }
 
 /** What every channel definition has in common, whatever its content type. */

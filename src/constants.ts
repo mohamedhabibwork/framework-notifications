@@ -1,6 +1,6 @@
 /**
  * Constants of `@framework/notifications`: dependency-injection tokens, the
- * notifykit provider catalogs per kit channel, and the SMS planning note.
+ * notifykit provider catalogs per kit channel.
  */
 import { token } from '@framework/core';
 import type { DatabaseChannelStore, NotificationsService } from './types';
@@ -48,13 +48,3 @@ export const KIT_DEFAULT_TARGETS: Readonly<Record<string, string>> = {
   twilio: 'phoneNumber',
   vonage: 'phoneNumber',
 };
-
-/**
- * SMS_PLANNED — the SMS channel is deliberately not implemented. Spec §8
- * requires real-transport integration tests to prove provider behavior, so a
- * real SMS dependency has to be chosen first; none is bundled. The envelope
- * schema rejects any channel outside `email` | `database` | `push` |
- * `messaging` until then.
- */
-export const SMS_PLANNED =
-  'notifications: the SMS channel is not implemented — planned until an SMS dependency is chosen; channels are `email`, `database`, `push` and `messaging` only' as const;

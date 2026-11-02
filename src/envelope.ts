@@ -42,8 +42,8 @@ const envelopeWithChannels = (channel: z.ZodType<string>): z.ZodType<Notificatio
 /**
  * The validated envelope: at least one channel, a recipient, and a JSON
  * payload. The email channel additionally requires `to` to be a valid email
- * address (same address rule as `@framework/mail`); the planned `sms` channel
- * (see `SMS_PLANNED`) and any unknown channel are rejected here. For the
+ * address (same address rule as `@framework/mail`); any channel not registered
+ * with the service is rejected here. For the
  * `push`/`messaging` channels the envelope stays provider-agnostic: `to` is
  * the string target (device token, chat id, channel id) and `native` is a
  * loosely validated passthrough object forwarded to the notifykit provider —

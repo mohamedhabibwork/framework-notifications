@@ -8,7 +8,6 @@ export {
   NOTIFICATION_STORE,
   NOTIFICATIONS,
   PUSH_PROVIDER_TYPES,
-  SMS_PLANNED,
 } from './constants';
 export { defineChannel, defineNotification } from './definition';
 export {
@@ -53,6 +52,14 @@ export {
 export { InMemoryNotificationStore } from './memory-store';
 export { createNotificationsProvider } from './provider';
 export { NotificationsService } from './service';
+export {
+  MemorySmsTransport,
+  smsChannel,
+  type TwilioSmsOptions,
+  twilioSms,
+  type VonageSmsOptions,
+  vonageSms,
+} from './sms';
 // Grouped conventions: every type in ./types, every constant in ./constants.
 // (`NotificationsService` is a class value exported from ./service above; its
 // type is re-exported there, so it is not repeated in this group.)
@@ -88,4 +95,6 @@ export type {
   NotificationsServiceOptions,
   PushContent,
   SendQueuedOptions,
+  SmsMessage,
+  SmsTransport,
 } from './types';

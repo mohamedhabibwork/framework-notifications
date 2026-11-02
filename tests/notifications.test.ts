@@ -15,7 +15,6 @@ import {
   NotificationStoreError,
   type NotificationsService,
   NotificationValidationError,
-  SMS_PLANNED,
 } from '../src';
 
 const redisUrl = process.env.REDIS_URL;
@@ -126,7 +125,7 @@ afterAll(async () => {
 });
 
 describe('notification envelope', () => {
-  test('rejects the planned sms channel as unsupported', async () => {
+  test('rejects an sms channel that was not registered', async () => {
     const channels = ['sms'] as unknown as NotificationChannel[];
     try {
       await notifications.send({ name: 'user.welcome', channels, to: 'ada@example.com', payload: { userName: 'Ada' } });
@@ -138,7 +137,6 @@ describe('notification envelope', () => {
         true,
       );
     }
-    expect(SMS_PLANNED).toContain('SMS channel is not implemented');
   });
 
   test('the email channel requires a valid email recipient', async () => {
