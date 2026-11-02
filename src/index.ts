@@ -2,6 +2,7 @@
 // Convention: every interface/type lives in `./types`, every constant in
 // `./constants`; runtime values (classes, functions, schemas) stay in their modules.
 export {
+  BUILT_IN_NOTIFICATION_CHANNELS,
   KIT_DEFAULT_TARGETS,
   MESSAGING_PROVIDER_TYPES,
   NOTIFICATION_STORE,
@@ -9,12 +10,13 @@ export {
   PUSH_PROVIDER_TYPES,
   SMS_PLANNED,
 } from './constants';
-export { defineNotification } from './definition';
+export { defineChannel, defineNotification } from './definition';
 export {
   databaseContentSchema,
   emailContentSchema,
   messagingContentSchema,
   notificationEnvelopeSchema,
+  notificationEnvelopeSchemaFor,
   parseDatabaseContent,
   parseEmailContent,
   parseMessagingContent,
@@ -55,7 +57,10 @@ export { NotificationsService } from './service';
 // (`NotificationsService` is a class value exported from ./service above; its
 // type is re-exported there, so it is not repeated in this group.)
 export type {
+  AnyNotificationChannelDefinition,
   AnyNotificationDefinition,
+  BuiltInNotificationChannel,
+  ChannelDelivery,
   ChannelStatus,
   DatabaseChannelStore,
   DatabaseContent,
@@ -66,12 +71,16 @@ export type {
   KitNotificationDriver,
   MessagingContent,
   NotificationChannel,
+  NotificationChannelDefinition,
   NotificationDefinition,
   NotificationEnvelope,
   NotificationFieldError,
+  NotificationInput,
   NotificationJobOptions,
   NotificationJobPayload,
   NotificationJobResult,
+  NotificationName,
+  NotificationPayload,
   NotificationProviderConfig,
   NotificationRecordInput,
   NotificationsProviderOptions,

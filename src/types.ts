@@ -2,7 +2,7 @@
  * Every interface and type alias of `@framework/notifications` in one place.
  * Runtime values (classes, tokens, functions, schemas) live in their modules.
  */
-import type { ExecutionContext, JsonObject } from '@framework/core';
+import type { ExecutionContext, JsonObject, Register } from '@framework/core';
 import type { Mailer } from '@framework/mail';
 import type { JobDefinition, QueueManager } from '@framework/queue';
 import type { NotificationDriverDefinition } from '@mohamedhabibwork/notifykit';
@@ -27,7 +27,12 @@ import type { z } from 'zod/v4';
  *   peers loaded lazily by notifykit — see `PUSH_PROVIDER_TYPES` /
  *   `MESSAGING_PROVIDER_TYPES`.
  */
-export type NotificationChannel = 'email' | 'database' | 'push' | 'messaging';
+export type BuiltInNotificationChannel = 'email' | 'database' | 'push' | 'messaging';
+
+/** Built-in channels plus any the application declares as `Register.channels` (see `defineChannel`). */
+export type NotificationChannel =
+  | BuiltInNotificationChannel
+  | (Register extends { readonly channels: infer TChannels extends string } ? TChannels : never);
 
 /** Channels whose engine is a notifykit provider (config under `notifications.providers`). */
 export type KitChannel = Extract<NotificationChannel, 'push' | 'messaging'>;
@@ -98,6 +103,15 @@ export type NotificationEnvelope = {
   };
 };
 
+/** What `send` and `sendQueued` take: the envelope, checked against `Register.notifications` when declared. */
+export type NotificationInput<TName extends NotificationName = NotificationName> = Omit<
+  NotificationEnvelope,
+  'name' | 'payload'
+> & {
+  readonly name: TName;
+  readonly payload: NotificationPayload<TName>;
+};
+
 // -- Delivery status --------------------------------------------------------------
 
 /** Lifecycle of one channel of one notification: `pending -> delivered | failed`. */
@@ -143,6 +157,8 @@ export interface NotificationRecordInput {
   readonly push?: PushContent;
   /** Built messaging content; present when the messaging channel was selected. */
   readonly messaging?: MessagingContent;
+  /** Built content per custom channel selected (see `defineChannel`). */
+  readonly custom?: Readonly<Record<string, JsonObject>>;
 }
 
 /**
@@ -179,8 +195,8 @@ export interface NotificationFieldError {
  * Channel selection happens per send via the envelope; a builder must exist
  * for every declared channel (checked by `defineNotification`).
  */
-export interface NotificationDefinition<TPayload extends JsonObject = JsonObject> {
-  readonly name: string;
+export interface NotificationDefinition<TPayload extends JsonObject = JsonObject, TName extends string = string> {
+  readonly name: TName;
   /** Every channel this notification may be delivered through, ever. */
   readonly channels: readonly NotificationChannel[];
   /** Validates the envelope payload before any builder runs. */
@@ -193,10 +209,63 @@ export interface NotificationDefinition<TPayload extends JsonObject = JsonObject
   toPush?(payload: TPayload): PushContent;
   /** Required when `channels` includes `messaging`. */
   toMessaging?(payload: TPayload): MessagingContent;
+  /** Content builders for custom channels, by channel name; required for each one declared. */
+  readonly content?: Readonly<Record<string, (payload: TPayload) => JsonObject>>;
 }
 
-// oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous definitions erased to one runtime shape (same pattern as queue's JobList)
-export type AnyNotificationDefinition = NotificationDefinition<any>;
+/** What every notification definition has in common, whatever its payload type. */
+export interface AnyNotificationDefinition {
+  readonly name: string;
+  readonly channels: readonly NotificationChannel[];
+  readonly payload: { safeParse(value: unknown): z.ZodSafeParseResult<JsonObject> };
+  toEmail?(payload: never): EmailContent;
+  toDatabase?(payload: never): DatabaseContent;
+  toPush?(payload: never): PushContent;
+  toMessaging?(payload: never): MessagingContent;
+  readonly content?: Readonly<Record<string, (payload: never) => JsonObject>>;
+}
+
+type RegisteredNotification = Register extends {
+  readonly notifications: infer TDefinitions extends readonly AnyNotificationDefinition[];
+}
+  ? TDefinitions[number]
+  : never;
+
+/** Names `send` accepts: those in `Register.notifications`, or any string when it is not declared. */
+export type NotificationName = [RegisteredNotification] extends [never] ? string : RegisteredNotification['name'];
+
+/** The payload of a notification named `TName` in `Register.notifications`, or any JSON object when it is not declared. */
+export type NotificationPayload<TName extends string> = [RegisteredNotification] extends [never]
+  ? JsonObject
+  : Extract<RegisteredNotification, { readonly name: TName }>['payload'] extends {
+        safeParse(value: unknown): z.ZodSafeParseResult<infer TPayload>;
+      }
+    ? TPayload
+    : never;
+
+/** Where a custom channel's delivery went; `reference` is recorded on the delivery status. */
+export interface ChannelDelivery {
+  readonly reference?: string;
+}
+
+/** A delivery channel beyond the built-in ones (see `defineChannel`). */
+export interface NotificationChannelDefinition<
+  TName extends string = string,
+  TContent extends JsonObject = JsonObject,
+> {
+  readonly name: TName;
+  /** Validates what a notification's content builder produced, before anything is persisted. */
+  readonly content: z.ZodType<TContent>;
+  /** Throws to record a failure, which also makes queued delivery retry. */
+  deliver(to: string, content: TContent, context: { readonly recordId: string }): Promise<ChannelDelivery | void>;
+}
+
+/** What every channel definition has in common, whatever its content type. */
+export interface AnyNotificationChannelDefinition {
+  readonly name: string;
+  readonly content: { safeParse(value: unknown): z.ZodSafeParseResult<JsonObject> };
+  deliver(to: string, content: never, context: { readonly recordId: string }): Promise<ChannelDelivery | void>;
+}
 
 // -- Queued delivery ---------------------------------------------------------------
 
@@ -208,6 +277,7 @@ export type NotificationJobPayload = {
   readonly database?: DatabaseContent;
   readonly push?: PushContent;
   readonly messaging?: MessagingContent;
+  readonly custom?: Readonly<Record<string, JsonObject>>;
 };
 
 /** JSON-safe result of the built-in delivery job. */
@@ -280,6 +350,8 @@ export interface NotificationsServiceOptions {
   readonly queue: QueueManager;
   /** Registered app notifications; looked up by envelope `name`. */
   readonly definitions?: readonly AnyNotificationDefinition[];
+  /** Custom delivery channels (see `defineChannel`). */
+  readonly channels?: readonly AnyNotificationChannelDefinition[];
   /** The queue job `sendQueued` dispatches; defaults to `defineNotificationJob()`. */
   readonly job?: JobDefinition<NotificationJobPayload, NotificationJobResult>;
   /**
@@ -295,6 +367,8 @@ export interface NotificationsServiceOptions {
 
 export interface NotificationsProviderOptions {
   readonly definitions?: readonly AnyNotificationDefinition[];
+  /** Custom delivery channels (see `defineChannel`). */
+  readonly channels?: readonly AnyNotificationChannelDefinition[];
   readonly job?: JobDefinition<NotificationJobPayload, NotificationJobResult>;
   /** The `notifications.providers` section (see {@link NotificationsServiceOptions.providers}). */
   readonly providers?: NotificationsProvidersConfig;

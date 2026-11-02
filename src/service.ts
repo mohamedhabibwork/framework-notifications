@@ -1,11 +1,14 @@
-import { currentExecution } from '@framework/core';
+import { currentExecution, type JsonObject } from '@framework/core';
 import type { Mailer } from '@framework/mail';
 import type { DispatchOptions, JobDefinition, QueueManager } from '@framework/queue';
-import { defineNotification } from './definition';
+import type { z } from 'zod/v4';
+import { BUILT_IN_NOTIFICATION_CHANNELS } from './constants';
+import { assertDeliverable } from './definition';
 import {
   databaseContentSchema,
   emailContentSchema,
   messagingContentSchema,
+  notificationEnvelopeSchemaFor,
   parseNotificationEnvelope,
   pushContentSchema,
   toNotificationFieldErrors,
@@ -28,6 +31,7 @@ import {
   resolveProviderEntry,
 } from './kit';
 import type {
+  AnyNotificationChannelDefinition,
   AnyNotificationDefinition,
   DatabaseChannelStore,
   DatabaseContent,
@@ -38,8 +42,10 @@ import type {
   MessagingContent,
   NotificationChannel,
   NotificationEnvelope,
+  NotificationInput,
   NotificationJobPayload,
   NotificationJobResult,
+  NotificationName,
   NotificationRecordInput,
   NotificationsServiceOptions,
   PushContent,
@@ -53,6 +59,7 @@ interface DeliveryPlan {
   readonly database?: DatabaseContent;
   readonly push?: PushContent;
   readonly messaging?: MessagingContent;
+  readonly custom?: Readonly<Record<string, JsonObject>>;
 }
 
 /**
@@ -96,6 +103,8 @@ export class NotificationsService {
   readonly #queue: QueueManager;
   readonly #job: JobDefinition<NotificationJobPayload, NotificationJobResult>;
   readonly #definitions = new Map<string, AnyNotificationDefinition>();
+  readonly #channels = new Map<string, AnyNotificationChannelDefinition>();
+  readonly #envelopeSchema: z.ZodType<NotificationEnvelope>;
   readonly #kitProviders: readonly KitNotificationDriver[];
   readonly #kitEntries: Partial<Record<KitChannel, ResolvedProviderEntry>>;
   readonly #kitNotifiers = new Map<KitChannel, Promise<KitNotifier>>();
@@ -113,18 +122,32 @@ export class NotificationsService {
         ? { messaging: resolveProviderEntry('messaging', providers.messaging, this.#kitProviders) }
         : {}),
     };
-    for (const candidate of options.definitions ?? []) {
-      const definition = defineNotification(candidate);
+    for (const channel of options.channels ?? []) {
+      if (this.#channels.has(channel.name)) {
+        throw new NotificationDefinitionError(`Channel "${channel.name}" is registered twice`);
+      }
+      this.#channels.set(channel.name, channel);
+    }
+    this.#envelopeSchema = notificationEnvelopeSchemaFor([...this.#channels.keys()]);
+    for (const definition of options.definitions ?? []) {
+      assertDeliverable(definition);
       if (this.#definitions.has(definition.name)) {
         throw new NotificationDefinitionError(`Notification "${definition.name}" is registered twice`);
+      }
+      for (const channel of definition.channels) {
+        if (!BUILT_IN_NOTIFICATION_CHANNELS.includes(channel) && !this.#channels.has(channel)) {
+          throw new NotificationDefinitionError(
+            `Notification "${definition.name}" declares the ${channel} channel, which is not registered; pass it as channels`,
+          );
+        }
       }
       this.#definitions.set(definition.name, definition);
     }
   }
 
   /** Delivers inline: validates, persists the record (pending), fans out, returns the final per-channel status. */
-  async send(input: NotificationEnvelope): Promise<DeliveryStatus> {
-    const plan = this.#plan(input);
+  async send<TName extends NotificationName>(input: NotificationInput<TName>): Promise<DeliveryStatus> {
+    const plan = this.#plan(input as unknown as NotificationEnvelope);
     const { id } = await this.#store.store(this.#record(plan));
     await Promise.all(plan.envelope.channels.map((channel) => this.#attemptChannel(id, channel, plan)));
     return this.#requireStatus(id);
@@ -136,11 +159,11 @@ export class NotificationsService {
    * policy; the idempotency key (`notification-<recordId>`) collapses
    * duplicate dispatches of the same record.
    */
-  async sendQueued(
-    input: NotificationEnvelope,
+  async sendQueued<TName extends NotificationName>(
+    input: NotificationInput<TName>,
     options: SendQueuedOptions = {},
   ): Promise<{ id: string; jobId: string }> {
-    const plan = this.#plan(input);
+    const plan = this.#plan(input as unknown as NotificationEnvelope);
     const { id } = await this.#store.store(this.#record(plan));
     const payload: NotificationJobPayload = {
       recordId: id,
@@ -149,6 +172,7 @@ export class NotificationsService {
       ...(plan.database ? { database: plan.database } : {}),
       ...(plan.push ? { push: plan.push } : {}),
       ...(plan.messaging ? { messaging: plan.messaging } : {}),
+      ...(plan.custom ? { custom: plan.custom } : {}),
     };
     const dispatch: DispatchOptions = {
       ...(options.delayMs !== undefined ? { delayMs: options.delayMs } : {}),
@@ -178,6 +202,7 @@ export class NotificationsService {
       ...(payload.database ? { database: payload.database } : {}),
       ...(payload.push ? { push: payload.push } : {}),
       ...(payload.messaging ? { messaging: payload.messaging } : {}),
+      ...(payload.custom ? { custom: payload.custom } : {}),
     };
     const pending = payload.envelope.channels.filter(
       (channel) => known.channels.find((entry) => entry.channel === channel)?.state !== 'delivered',
@@ -207,7 +232,7 @@ export class NotificationsService {
 
   /** Validates the envelope, resolves the definition and builds content for every selected channel. */
   #plan(input: NotificationEnvelope): DeliveryPlan {
-    const envelope = parseNotificationEnvelope(input);
+    const envelope = parseNotificationEnvelope(input, this.#envelopeSchema);
     const definition = this.#definitions.get(envelope.name);
     if (!definition) throw new NotificationUnknownError(envelope.name);
     const unsupported = envelope.channels.filter((channel) => !definition.channels.includes(channel));
@@ -222,11 +247,13 @@ export class NotificationsService {
     let database: DatabaseContent | undefined;
     let push: PushContent | undefined;
     let messaging: MessagingContent | undefined;
+    const custom: Record<string, JsonObject> = {};
     for (const channel of envelope.channels) {
       if (channel === 'email') email = this.#buildEmail(definition, parsed.data);
       else if (channel === 'database') database = this.#buildDatabase(definition, parsed.data);
       else if (channel === 'push') push = this.#buildKitContent(definition, 'push', parsed.data);
-      else messaging = this.#buildKitContent(definition, 'messaging', parsed.data);
+      else if (channel === 'messaging') messaging = this.#buildKitContent(definition, 'messaging', parsed.data);
+      else custom[channel] = this.#buildCustom(definition, channel, parsed.data);
     }
     // Fail fast on unconfigured kit channels: nothing is persisted and no
     // channel is attempted when a declared channel has no provider.
@@ -242,11 +269,12 @@ export class NotificationsService {
       ...(database ? { database } : {}),
       ...(push ? { push } : {}),
       ...(messaging ? { messaging } : {}),
+      ...(Object.keys(custom).length > 0 ? { custom } : {}),
     };
   }
 
-  #buildEmail(definition: AnyNotificationDefinition, payload: object): EmailContent {
-    const built = definition.toEmail?.(payload);
+  #buildEmail(definition: AnyNotificationDefinition, payload: JsonObject): EmailContent {
+    const built = definition.toEmail?.(payload as never);
     if (!built) {
       throw new NotificationDefinitionError(`Notification "${definition.name}" provides no toEmail builder`);
     }
@@ -255,8 +283,8 @@ export class NotificationsService {
     return result.data;
   }
 
-  #buildDatabase(definition: AnyNotificationDefinition, payload: object): DatabaseContent {
-    const built = definition.toDatabase?.(payload);
+  #buildDatabase(definition: AnyNotificationDefinition, payload: JsonObject): DatabaseContent {
+    const built = definition.toDatabase?.(payload as never);
     if (!built) {
       throw new NotificationDefinitionError(`Notification "${definition.name}" provides no toDatabase builder`);
     }
@@ -269,10 +297,10 @@ export class NotificationsService {
   #buildKitContent(
     definition: AnyNotificationDefinition,
     channel: KitChannel,
-    payload: object,
+    payload: JsonObject,
   ): PushContent | MessagingContent {
     const builder = channel === 'push' ? definition.toPush : definition.toMessaging;
-    const built = builder?.(payload);
+    const built = builder?.(payload as never);
     if (!built) {
       throw new NotificationDefinitionError(
         `Notification "${definition.name}" provides no ${channel === 'push' ? 'toPush' : 'toMessaging'} builder`,
@@ -280,6 +308,19 @@ export class NotificationsService {
     }
     const schema = channel === 'push' ? pushContentSchema : messagingContentSchema;
     const result = schema.safeParse(built);
+    if (!result.success) throw new NotificationValidationError(toNotificationFieldErrors(result.error));
+    return result.data;
+  }
+
+  /** Builds and validates a custom channel's content, against that channel's own schema. */
+  #buildCustom(definition: AnyNotificationDefinition, channel: string, payload: JsonObject): JsonObject {
+    const target = this.#channels.get(channel);
+    const builder =
+      definition.content && Object.hasOwn(definition.content, channel) ? definition.content[channel] : undefined;
+    if (!target || !builder) {
+      throw new NotificationDefinitionError(`Notification "${definition.name}" provides no ${channel} content builder`);
+    }
+    const result = target.content.safeParse(builder(payload as never));
     if (!result.success) throw new NotificationValidationError(toNotificationFieldErrors(result.error));
     return result.data;
   }
@@ -294,6 +335,7 @@ export class NotificationsService {
       ...(plan.database ? { database: plan.database } : {}),
       ...(plan.push ? { push: plan.push } : {}),
       ...(plan.messaging ? { messaging: plan.messaging } : {}),
+      ...(plan.custom ? { custom: plan.custom } : {}),
     };
   }
 
@@ -332,6 +374,12 @@ export class NotificationsService {
     channel: NotificationChannel,
     plan: DeliveryPlan,
   ): Promise<{ ok: true } | { ok: false; message: string }> {
+    const custom = this.#channels.get(channel);
+    if (custom) return this.#attemptCustomChannel(id, custom, plan);
+    // A queued envelope can name a channel this process lacks: never count that as delivered.
+    if (!BUILT_IN_NOTIFICATION_CHANNELS.includes(channel)) {
+      throw new NotificationChannelError(`Channel "${channel}" is not registered on this process`);
+    }
     if (channel === 'push' || channel === 'messaging') {
       // Created before the try: a provider the kit cannot construct is an
       // infrastructure/configuration failure, not a delivery outcome.
@@ -379,6 +427,29 @@ export class NotificationsService {
     } catch (cause) {
       const message = failureMessage(cause);
       await this.#store.markFailed(id, channel, message);
+      return { ok: false, message };
+    }
+  }
+
+  async #attemptCustomChannel(
+    id: string,
+    channel: AnyNotificationChannelDefinition,
+    plan: DeliveryPlan,
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
+    const name = channel.name as NotificationChannel;
+    try {
+      const content = plan.custom?.[channel.name];
+      if (!content) {
+        throw new NotificationDefinitionError(
+          `Notification "${plan.envelope.name}" has no built ${channel.name} content`,
+        );
+      }
+      const delivery = await channel.deliver(plan.envelope.to, content as never, { recordId: id });
+      await this.#store.markDelivered(id, name, delivery?.reference);
+      return { ok: true };
+    } catch (cause) {
+      const message = failureMessage(cause);
+      await this.#store.markFailed(id, name, message);
       return { ok: false, message };
     }
   }

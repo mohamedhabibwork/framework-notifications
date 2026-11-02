@@ -4,9 +4,10 @@ import { NOTIFICATIONS } from './constants';
 import {
   databaseContentSchema,
   emailContentSchema,
+  jsonRecord,
   messagingContentSchema,
-  notificationEnvelopeSchema,
   pushContentSchema,
+  queuedEnvelopeSchema,
 } from './envelope';
 import type { NotificationJobOptions, NotificationJobPayload, NotificationJobResult } from './types';
 
@@ -22,11 +23,12 @@ export const NOTIFICATION_JOB_VERSION = 1;
 export const notificationJobPayloadSchema: z.ZodType<NotificationJobPayload> = z
   .object({
     recordId: z.string().min(1, 'Record id is required'),
-    envelope: notificationEnvelopeSchema,
+    envelope: queuedEnvelopeSchema,
     email: emailContentSchema.optional(),
     database: databaseContentSchema.optional(),
     push: pushContentSchema.optional(),
     messaging: messagingContentSchema.optional(),
+    custom: z.record(z.string(), jsonRecord).optional(),
   })
   .refine((payload) => !payload.envelope.channels.includes('email') || payload.email !== undefined, {
     error: 'The email channel content is required when the email channel is selected',

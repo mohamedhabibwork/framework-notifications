@@ -42,6 +42,7 @@ export function createNotificationsProvider<TConfig extends object = object>(
           queue: r.resolve(QUEUE),
           store: r.resolve(NOTIFICATION_STORE),
           ...(options.definitions ? { definitions: options.definitions } : {}),
+          ...(options.channels ? { channels: options.channels } : {}),
           ...(options.job ? { job: options.job } : {}),
           ...(options.providers ? { providers: options.providers } : {}),
           ...(options.kitProviders ? { kitProviders: options.kitProviders } : {}),

@@ -15,7 +15,29 @@ const jsonValue: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(jsonValue), z.record(z.string(), jsonValue)]),
 );
 
-const jsonRecord: z.ZodType<JsonObject> = z.record(z.string(), jsonValue);
+export const jsonRecord: z.ZodType<JsonObject> = z.record(z.string(), jsonValue);
+
+const BUILT_IN_CHANNEL = z.enum(['email', 'database', 'push', 'messaging']);
+
+const envelopeWithChannels = (channel: z.ZodType<string>): z.ZodType<NotificationEnvelope> =>
+  z
+    .object({
+      name: z.string().trim().min(1, 'Name is required').max(255),
+      channels: z.array(channel).min(1, 'At least one channel is required'),
+      to: z.string().trim().min(1, 'Recipient is required'),
+      payload: jsonRecord,
+      native: jsonRecord.optional(),
+      nativeByChannel: z
+        .object({
+          push: jsonRecord.optional(),
+          messaging: jsonRecord.optional(),
+        })
+        .optional(),
+    })
+    .refine((envelope) => !envelope.channels.includes('email') || mailAddressSchema.safeParse(envelope.to).success, {
+      error: 'The email channel requires a valid email recipient',
+      path: ['to'],
+    }) as unknown as z.ZodType<NotificationEnvelope>;
 
 /**
  * The validated envelope: at least one channel, a recipient, and a JSON
@@ -27,24 +49,20 @@ const jsonRecord: z.ZodType<JsonObject> = z.record(z.string(), jsonValue);
  * loosely validated passthrough object forwarded to the notifykit provider —
  * the provider-specific typing lives in `notifications.providers`, never here.
  */
-export const notificationEnvelopeSchema: z.ZodType<NotificationEnvelope> = z
-  .object({
-    name: z.string().trim().min(1, 'Name is required').max(255),
-    channels: z.array(z.enum(['email', 'database', 'push', 'messaging'])).min(1, 'At least one channel is required'),
-    to: z.string().trim().min(1, 'Recipient is required'),
-    payload: jsonRecord,
-    native: jsonRecord.optional(),
-    nativeByChannel: z
-      .object({
-        push: jsonRecord.optional(),
-        messaging: jsonRecord.optional(),
-      })
-      .optional(),
-  })
-  .refine((envelope) => !envelope.channels.includes('email') || mailAddressSchema.safeParse(envelope.to).success, {
-    error: 'The email channel requires a valid email recipient',
-    path: ['to'],
-  });
+export const notificationEnvelopeSchema: z.ZodType<NotificationEnvelope> = envelopeWithChannels(BUILT_IN_CHANNEL);
+
+/** {@link notificationEnvelopeSchema}, also accepting these custom channels. */
+export const notificationEnvelopeSchemaFor = (channels: readonly string[]): z.ZodType<NotificationEnvelope> =>
+  channels.length === 0
+    ? notificationEnvelopeSchema
+    : envelopeWithChannels(z.enum([...BUILT_IN_CHANNEL.options, ...channels]));
+
+/**
+ * The envelope a queued job carries. It was validated at dispatch, and a worker
+ * may not have the producer's custom channels registered, so the name stays open
+ * here and delivery refuses a channel it can't serve.
+ */
+export const queuedEnvelopeSchema: z.ZodType<NotificationEnvelope> = envelopeWithChannels(z.string().min(1));
 
 /** Email-channel content: subject plus at least one body (same body rule as mail). */
 export const emailContentSchema: z.ZodType<EmailContent> = z
@@ -88,8 +106,11 @@ export function toNotificationFieldErrors(error: {
 }
 
 /** Validates a raw envelope and returns the normalized shape, or throws `NotificationValidationError`. */
-export function parseNotificationEnvelope(input: NotificationEnvelope): NotificationEnvelope {
-  const result = notificationEnvelopeSchema.safeParse(input);
+export function parseNotificationEnvelope(
+  input: NotificationEnvelope,
+  schema: z.ZodType<NotificationEnvelope> = notificationEnvelopeSchema,
+): NotificationEnvelope {
+  const result = schema.safeParse(input);
   if (!result.success) throw new NotificationValidationError(toNotificationFieldErrors(result.error));
   return result.data;
 }

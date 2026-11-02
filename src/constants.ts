@@ -8,6 +8,9 @@ import type { DatabaseChannelStore, NotificationsService } from './types';
 /** The notifications service (inline + queued delivery, status reads). */
 export const NOTIFICATIONS = token<NotificationsService>('notifications.service');
 
+/** Channels the service delivers itself; {@link defineChannel} can't take these names. */
+export const BUILT_IN_NOTIFICATION_CHANNELS: readonly string[] = ['email', 'database', 'push', 'messaging'];
+
 /**
  * The application-owned notification store (database channel rows + delivery
  * status). The framework deliberately does NOT bind it: applications bind
